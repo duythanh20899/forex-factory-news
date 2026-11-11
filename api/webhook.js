@@ -1,27 +1,27 @@
 import { fetchCalendar, filterEvents, buildTelegramMessage, getDateStringInTimezone } from '../lib/forexfactory.js';
 import { sendTelegramMessage } from '../lib/telegram.js';
 
-// Persistent Keyboard attached to bottom of chat input
-const MAIN_KEYBOARD = {
-  keyboard: [
-    [{ text: '📅 /today (Tin đỏ & Nghỉ lễ)' }, { text: '🔴 /high (Chỉ tin đỏ)' }],
-    [{ text: '⏰ /upcoming (2 giờ tới)' }, { text: 'ℹ️ /start' }]
-  ],
-  resize_keyboard: true,
-  is_persistent: true
-};
-
-// Inline clickable buttons inside messages
+// Inline clickable buttons attached to chat messages (Works perfectly in both Groups and Private)
 const INLINE_BUTTONS = {
   inline_keyboard: [
     [
-      { text: '📅 Hôm nay (🔴 & ⚪)', callback_data: '/today' },
+      { text: '📅 Lịch hôm nay (🔴 & ⚪)', callback_data: '/today' },
       { text: '🔴 Chỉ tin Đỏ', callback_data: '/high' }
     ],
     [
-      { text: '⏰ 2 Giờ tới', callback_data: '/upcoming' }
+      { text: '⏰ Tin trong 2 giờ tới', callback_data: '/upcoming' }
     ]
   ]
+};
+
+// Keyboard for private chats
+const PRIVATE_KEYBOARD = {
+  keyboard: [
+    [{ text: '/today' }, { text: '/high' }],
+    [{ text: '/upcoming' }, { text: '/start' }]
+  ],
+  resize_keyboard: true,
+  is_persistent: true
 };
 
 export default async function handler(req, res) {
@@ -35,16 +35,19 @@ export default async function handler(req, res) {
   let rawText = '';
   let fromName = 'Trader';
   let callbackQueryId = null;
+  let isGroup = false;
 
   if (callback_query) {
     chatId = callback_query.message.chat.id;
     rawText = callback_query.data || '';
     fromName = callback_query.from?.first_name || 'Trader';
     callbackQueryId = callback_query.id;
+    isGroup = callback_query.message.chat.type === 'group' || callback_query.message.chat.type === 'supergroup';
   } else if (message) {
     chatId = message.chat.id;
     rawText = message.text || '';
     fromName = message.from?.first_name || 'Trader';
+    isGroup = message.chat.type === 'group' || message.chat.type === 'supergroup';
   } else {
     return res.status(200).send('OK (Ignored event)');
   }
@@ -59,13 +62,15 @@ export default async function handler(req, res) {
     }).catch(() => {});
   }
 
-  // Extract command (handling e.g. "📅 /today (Tin đỏ & Nghỉ lễ)" -> "/today")
+  // Extract command (handling e.g. "/today@forex_news_group_bot" -> "/today")
   const match = rawText.match(/\/([a-zA-Z0-9_]+)/);
   const command = match ? `/${match[1].toLowerCase()}` : rawText.trim().toLowerCase();
 
   const timeZone = process.env.TIMEZONE || 'Asia/Ho_Chi_Minh';
   const currenciesParam = process.env.CURRENCIES || 'USD,EUR,GBP,JPY,CAD,AUD,NZD,CHF';
   const currencies = currenciesParam.split(',').map(c => c.trim()).filter(Boolean);
+
+  const replyMarkup = isGroup ? INLINE_BUTTONS : INLINE_BUTTONS;
 
   try {
     if (command === '/start' || command === '/help') {
@@ -76,19 +81,19 @@ export default async function handler(req, res) {
         `🔹 <code>/today</code>: Xem lịch tin đỏ 🔴 & nghỉ lễ ⚪ hôm nay\n` +
         `🔹 <code>/high</code>: Chỉ xem tin đỏ quan trọng (🔴 High Impact)\n` +
         `🔹 <code>/upcoming</code>: Xem tin sắp ra trong 2 giờ tới\n` +
-        `🔹 <code>/id</code>: Lấy Chat ID của bạn / nhóm\n\n` +
-        `<i>Bạn có thể bấm vào bàn phím bên dưới hoặc các nút để tra cứu nhanh!</i>`;
+        `🔹 <code>/id</code>: Lấy Chat ID của nhóm này\n\n` +
+        `<i>👇 Bấm các nút dưới đây để tra cứu nhanh:</i>`;
 
       await sendTelegramMessage(welcomeText, {
         chatId,
-        replyMarkup: MAIN_KEYBOARD
+        replyMarkup
       });
       return res.status(200).send('OK');
     }
 
     if (command === '/id') {
-      const idText = `🆔 <b>Chat ID của bạn:</b> <code>${chatId}</code>`;
-      await sendTelegramMessage(idText, { chatId, replyMarkup: MAIN_KEYBOARD });
+      const idText = `🆔 <b>Chat ID:</b> <code>${chatId}</code>`;
+      await sendTelegramMessage(idText, { chatId, replyMarkup });
       return res.status(200).send('OK');
     }
 
@@ -130,7 +135,7 @@ export default async function handler(req, res) {
       if (targetEvents.length === 0) {
         await sendTelegramMessage(`ℹ️ Không có tin đỏ hoặc ngày nghỉ lễ nào trong khung thời gian này.`, {
           chatId,
-          replyMarkup: MAIN_KEYBOARD
+          replyMarkup
         });
         return res.status(200).send('OK');
       }
@@ -144,7 +149,7 @@ export default async function handler(req, res) {
 
       await sendTelegramMessage(msg, {
         chatId,
-        replyMarkup: MAIN_KEYBOARD
+        replyMarkup
       });
       return res.status(200).send('OK');
     }
@@ -155,7 +160,7 @@ export default async function handler(req, res) {
     try {
       await sendTelegramMessage(`⚠️ Có lỗi xảy ra khi xử lý: ${error.message}`, {
         chatId,
-        replyMarkup: MAIN_KEYBOARD
+        replyMarkup
       });
     } catch (_) {}
     return res.status(200).send('Error');
