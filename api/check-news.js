@@ -1,18 +1,6 @@
 import { fetchCalendar, filterEvents, buildTelegramMessage, getDateStringInTimezone } from '../lib/forexfactory.js';
 import { sendTelegramMessage } from '../lib/telegram.js';
 
-const INLINE_BUTTONS = {
-  inline_keyboard: [
-    [
-      { text: '📅 Lịch hôm nay (🔴 & ⚪)', callback_data: '/today' },
-      { text: '🔴 Chỉ tin Đỏ', callback_data: '/high' }
-    ],
-    [
-      { text: '⏰ Tin trong 2 giờ tới', callback_data: '/upcoming' }
-    ]
-  ]
-};
-
 export default async function handler(req, res) {
   // Allow GET and POST
   if (req.method !== 'GET' && req.method !== 'POST') {
@@ -104,9 +92,7 @@ export default async function handler(req, res) {
     // 5. Send to Telegram (unless preview=true)
     let telegramResult = null;
     if (!preview) {
-      telegramResult = await sendTelegramMessage(message, {
-        replyMarkup: INLINE_BUTTONS
-      });
+      telegramResult = await sendTelegramMessage(message);
     }
 
     return res.status(200).json({
