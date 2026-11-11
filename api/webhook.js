@@ -1,27 +1,63 @@
 import { fetchCalendar, filterEvents, buildTelegramMessage, getDateStringInTimezone } from '../lib/forexfactory.js';
 import { sendTelegramMessage } from '../lib/telegram.js';
 
+const QUICK_KEYBOARD = {
+  inline_keyboard: [
+    [
+      { text: '📅 Hôm nay (Đỏ & Cam)', callback_data: '/today' },
+      { text: '🔴 Chỉ tin Đỏ', callback_data: '/high' }
+    ],
+    [
+      { text: '⏰ 2 Giờ tới', callback_data: '/upcoming' },
+      { text: '🟡 Tất cả tin', callback_data: '/all' }
+    ]
+  ]
+};
+
 export default async function handler(req, res) {
   if (req.method !== 'POST') {
     return res.status(200).send('Telegram Webhook Endpoint is Running');
   }
 
-  const { message } = req.body || {};
-  if (!message || !message.text) {
-    return res.status(200).send('OK (No text)');
+  const { message, callback_query } = req.body || {};
+
+  // Handle both standard text messages and inline button clicks (callback queries)
+  let chatId = null;
+  let rawText = '';
+  let fromName = 'Trader';
+  let callbackQueryId = null;
+
+  if (callback_query) {
+    chatId = callback_query.message.chat.id;
+    rawText = callback_query.data || '';
+    fromName = callback_query.from?.first_name || 'Trader';
+    callbackQueryId = callback_query.id;
+  } else if (message) {
+    chatId = message.chat.id;
+    rawText = message.text || '';
+    fromName = message.from?.first_name || 'Trader';
+  } else {
+    return res.status(200).send('OK (Ignored event)');
   }
 
-  const chatId = message.chat.id;
-  const rawText = message.text.trim();
-  const command = rawText.split(' ')[0].toLowerCase().replace(/@.+$/, ''); // Remove @botname if in group
+  // Answer callback query quickly if present
+  if (callbackQueryId) {
+    const token = process.env.TELEGRAM_BOT_TOKEN;
+    fetch(`https://api.telegram.org/bot${token}/answerCallbackQuery`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ callback_query_id: callbackQueryId })
+    }).catch(() => {});
+  }
 
+  const command = rawText.trim().split(' ')[0].toLowerCase().replace(/@.+$/, '');
   const timeZone = process.env.TIMEZONE || 'Asia/Ho_Chi_Minh';
   const currenciesParam = process.env.CURRENCIES || 'USD,EUR,GBP,JPY,CAD,AUD,NZD,CHF';
   const currencies = currenciesParam.split(',').map(c => c.trim()).filter(Boolean);
 
   try {
     if (command === '/start' || command === '/help') {
-      const welcomeText = `👋 <b>Xin chào ${message.from?.first_name || 'Trader'}!</b>\n\n` +
+      const welcomeText = `👋 <b>Xin chào ${fromName}!</b>\n\n` +
         `Tôi là Bot cập nhật lịch kinh tế từ <b>ForexFactory</b> 📈\n\n` +
         `<b>Các lệnh hỗ trợ:</b>\n` +
         `🔹 <code>/today</code>: Xem các tin kinh tế quan trọng hôm nay (🔴 & 🟠)\n` +
@@ -29,15 +65,14 @@ export default async function handler(req, res) {
         `🔹 <code>/upcoming</code>: Xem tin trong 2 giờ tới\n` +
         `🔹 <code>/all</code>: Xem tất cả tin hôm nay (bao gồm cả tin vàng 🟡)\n` +
         `🔹 <code>/id</code>: Lấy Chat ID của bạn / nhóm này\n\n` +
-        `<i>Bot tự động cảnh báo trước giờ ra tin thông qua Vercel + Cron-job.org!</i>`;
+        `<i>Bấm vào các nút dưới đây để xem nhanh:</i>`;
 
-      await sendTelegramMessage(welcomeText, { chatId });
+      await sendTelegramMessage(welcomeText, { chatId, replyMarkup: QUICK_KEYBOARD });
       return res.status(200).send('OK');
     }
 
     if (command === '/id') {
-      const idText = `🆔 <b>Chat ID của bạn:</b> <code>${chatId}</code>\n` +
-        `Loại chat: <b>${message.chat.type}</b>`;
+      const idText = `🆔 <b>Chat ID của bạn:</b> <code>${chatId}</code>`;
       await sendTelegramMessage(idText, { chatId });
       return res.status(200).send('OK');
     }
@@ -84,7 +119,10 @@ export default async function handler(req, res) {
       }
 
       if (targetEvents.length === 0) {
-        await sendTelegramMessage(`ℹ️ Không có tin kinh tế nào phù hợp trong khoảng thời gian này.`, { chatId });
+        await sendTelegramMessage(`ℹ️ Không có tin kinh tế nào phù hợp trong khoảng thời gian này.`, {
+          chatId,
+          replyMarkup: QUICK_KEYBOARD
+        });
         return res.status(200).send('OK');
       }
 
@@ -95,7 +133,10 @@ export default async function handler(req, res) {
         note: `Tổng cộng: ${targetEvents.length} tin.`
       });
 
-      await sendTelegramMessage(msg, { chatId });
+      await sendTelegramMessage(msg, {
+        chatId,
+        replyMarkup: QUICK_KEYBOARD
+      });
       return res.status(200).send('OK');
     }
 
