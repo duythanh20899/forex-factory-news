@@ -1,0 +1,13 @@
+{
+  "version": 2,
+  "rewrites": [
+    {
+      "source": "/api/check-news",
+      "destination": "/api/check-news"
+    },
+    {
+      "source": "/api/webhook",
+      "destination": "/api/webhook"
+    }
+  ]
+}

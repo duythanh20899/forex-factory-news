@@ -1,0 +1,20 @@
+{
+  "name": "forex-factory-telegram-bot",
+  "version": "1.0.0",
+  "description": "Telegram Bot to notify economic calendar news from ForexFactory on Vercel with Cron-job.org",
+  "type": "module",
+  "main": "api/check-news.js",
+  "scripts": {
+    "start": "node api/check-news.js",
+    "test": "node test.js"
+  },
+  "keywords": [
+    "forexfactory",
+    "telegram-bot",
+    "economic-calendar",
+    "vercel",
+    "serverless"
+  ],
+  "author": "",
+  "license": "ISC"
+}
