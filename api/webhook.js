@@ -1,15 +1,25 @@
 import { fetchCalendar, filterEvents, buildTelegramMessage, getDateStringInTimezone } from '../lib/forexfactory.js';
 import { sendTelegramMessage } from '../lib/telegram.js';
 
-const QUICK_KEYBOARD = {
+// Persistent Keyboard attached to bottom of chat input
+const MAIN_KEYBOARD = {
+  keyboard: [
+    [{ text: '📅 /today (Tin đỏ & Nghỉ lễ)' }, { text: '🔴 /high (Chỉ tin đỏ)' }],
+    [{ text: '⏰ /upcoming (2 giờ tới)' }, { text: 'ℹ️ /start' }]
+  ],
+  resize_keyboard: true,
+  is_persistent: true
+};
+
+// Inline clickable buttons inside messages
+const INLINE_BUTTONS = {
   inline_keyboard: [
     [
-      { text: '📅 Hôm nay (Đỏ & Cam)', callback_data: '/today' },
+      { text: '📅 Hôm nay (🔴 & ⚪)', callback_data: '/today' },
       { text: '🔴 Chỉ tin Đỏ', callback_data: '/high' }
     ],
     [
-      { text: '⏰ 2 Giờ tới', callback_data: '/upcoming' },
-      { text: '🟡 Tất cả tin', callback_data: '/all' }
+      { text: '⏰ 2 Giờ tới', callback_data: '/upcoming' }
     ]
   ]
 };
@@ -21,7 +31,6 @@ export default async function handler(req, res) {
 
   const { message, callback_query } = req.body || {};
 
-  // Handle both standard text messages and inline button clicks (callback queries)
   let chatId = null;
   let rawText = '';
   let fromName = 'Trader';
@@ -50,7 +59,10 @@ export default async function handler(req, res) {
     }).catch(() => {});
   }
 
-  const command = rawText.trim().split(' ')[0].toLowerCase().replace(/@.+$/, '');
+  // Extract command (handling e.g. "📅 /today (Tin đỏ & Nghỉ lễ)" -> "/today")
+  const match = rawText.match(/\/([a-zA-Z0-9_]+)/);
+  const command = match ? `/${match[1].toLowerCase()}` : rawText.trim().toLowerCase();
+
   const timeZone = process.env.TIMEZONE || 'Asia/Ho_Chi_Minh';
   const currenciesParam = process.env.CURRENCIES || 'USD,EUR,GBP,JPY,CAD,AUD,NZD,CHF';
   const currencies = currenciesParam.split(',').map(c => c.trim()).filter(Boolean);
@@ -58,38 +70,35 @@ export default async function handler(req, res) {
   try {
     if (command === '/start' || command === '/help') {
       const welcomeText = `👋 <b>Xin chào ${fromName}!</b>\n\n` +
-        `Tôi là Bot cập nhật lịch kinh tế từ <b>ForexFactory</b> 📈\n\n` +
+        `Tôi là Bot cập nhật lịch kinh tế <b>ForexFactory</b> 📈\n` +
+        `<i>(Chỉ lọc tin Đỏ 🔴 biến động mạnh và tin Trắng ⚪ nghỉ lễ ngân hàng)</i>\n\n` +
         `<b>Các lệnh hỗ trợ:</b>\n` +
-        `🔹 <code>/today</code>: Xem các tin kinh tế quan trọng hôm nay (🔴 & 🟠)\n` +
-        `🔹 <code>/high</code>: Chỉ xem tin đỏ quan trọng nhất hôm nay (🔴 High)\n` +
-        `🔹 <code>/upcoming</code>: Xem tin trong 2 giờ tới\n` +
-        `🔹 <code>/all</code>: Xem tất cả tin hôm nay (bao gồm cả tin vàng 🟡)\n` +
-        `🔹 <code>/id</code>: Lấy Chat ID của bạn / nhóm này\n\n` +
-        `<i>Bấm vào các nút dưới đây để xem nhanh:</i>`;
+        `🔹 <code>/today</code>: Xem lịch tin đỏ 🔴 & nghỉ lễ ⚪ hôm nay\n` +
+        `🔹 <code>/high</code>: Chỉ xem tin đỏ quan trọng (🔴 High Impact)\n` +
+        `🔹 <code>/upcoming</code>: Xem tin sắp ra trong 2 giờ tới\n` +
+        `🔹 <code>/id</code>: Lấy Chat ID của bạn / nhóm\n\n` +
+        `<i>Bạn có thể bấm vào bàn phím bên dưới hoặc các nút để tra cứu nhanh!</i>`;
 
-      await sendTelegramMessage(welcomeText, { chatId, replyMarkup: QUICK_KEYBOARD });
+      await sendTelegramMessage(welcomeText, {
+        chatId,
+        replyMarkup: MAIN_KEYBOARD
+      });
       return res.status(200).send('OK');
     }
 
     if (command === '/id') {
       const idText = `🆔 <b>Chat ID của bạn:</b> <code>${chatId}</code>`;
-      await sendTelegramMessage(idText, { chatId });
+      await sendTelegramMessage(idText, { chatId, replyMarkup: MAIN_KEYBOARD });
       return res.status(200).send('OK');
     }
 
-    if (['/today', '/high', '/all', '/upcoming'].includes(command)) {
+    if (['/today', '/high', '/upcoming'].includes(command)) {
       const allEvents = await fetchCalendar();
       const now = Date.now();
 
       let targetEvents = [];
       let title = '';
-      let minImpact = 'Medium';
-
-      if (command === '/high') {
-        minImpact = 'High';
-      } else if (command === '/all') {
-        minImpact = 'Low';
-      }
+      const allowedImpacts = command === '/high' ? ['High'] : ['High', 'Holiday', 'Non-Economic'];
 
       if (command === '/upcoming') {
         const fromTime = now;
@@ -98,10 +107,10 @@ export default async function handler(req, res) {
           fromTime,
           toTime,
           timeZone,
-          minImpact: 'Medium',
+          allowedImpacts,
           currencies
         });
-        title = `TIN KINH TẾ TRONG 2 GIỜ TỚI`;
+        title = `TIN ĐỎ & NGHỈ LỄ TRONG 2 GIỜ TỚI`;
       } else {
         // Today
         const todayDateStr = getDateStringInTimezone(new Date(now), timeZone);
@@ -109,19 +118,19 @@ export default async function handler(req, res) {
         targetEvents = filterEvents(allEvents, {
           exactDay: todayDateStr,
           timeZone,
-          minImpact,
+          allowedImpacts,
           currencies
         });
 
         title = command === '/high' 
           ? `LỊCH TIN ĐỎ HÔM NAY (🔴 High Impact)` 
-          : `LỊCH TIN KINH TẾ HÔM NAY`;
+          : `LỊCH TIN ĐỎ 🔴 & NGHỈ LỄ ⚪ HÔM NAY`;
       }
 
       if (targetEvents.length === 0) {
-        await sendTelegramMessage(`ℹ️ Không có tin kinh tế nào phù hợp trong khoảng thời gian này.`, {
+        await sendTelegramMessage(`ℹ️ Không có tin đỏ hoặc ngày nghỉ lễ nào trong khung thời gian này.`, {
           chatId,
-          replyMarkup: QUICK_KEYBOARD
+          replyMarkup: MAIN_KEYBOARD
         });
         return res.status(200).send('OK');
       }
@@ -130,12 +139,12 @@ export default async function handler(req, res) {
         title,
         events: targetEvents,
         timeZone,
-        note: `Tổng cộng: ${targetEvents.length} tin.`
+        note: `Tổng cộng: ${targetEvents.length} sự kiện.`
       });
 
       await sendTelegramMessage(msg, {
         chatId,
-        replyMarkup: QUICK_KEYBOARD
+        replyMarkup: MAIN_KEYBOARD
       });
       return res.status(200).send('OK');
     }
@@ -144,7 +153,10 @@ export default async function handler(req, res) {
   } catch (error) {
     console.error('Webhook error:', error);
     try {
-      await sendTelegramMessage(`⚠️ Có lỗi xảy ra khi xử lý: ${error.message}`, { chatId });
+      await sendTelegramMessage(`⚠️ Có lỗi xảy ra khi xử lý: ${error.message}`, {
+        chatId,
+        replyMarkup: MAIN_KEYBOARD
+      });
     } catch (_) {}
     return res.status(200).send('Error');
   }

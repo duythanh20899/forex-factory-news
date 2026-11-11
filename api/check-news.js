@@ -24,7 +24,6 @@ export default async function handler(req, res) {
   try {
     const now = Date.now();
     const timeZone = process.env.TIMEZONE || req.query.timezone || 'Asia/Ho_Chi_Minh';
-    const minImpact = req.query.impact || process.env.MIN_IMPACT || 'Medium';
     const currenciesParam = req.query.currencies || process.env.CURRENCIES || 'USD,EUR,GBP,JPY,CAD,AUD,NZD,CHF';
     const currencies = currenciesParam.split(',').map(c => c.trim()).filter(Boolean);
 
@@ -44,11 +43,10 @@ export default async function handler(req, res) {
       targetEvents = filterEvents(allEvents, {
         exactDay: todayDateStr,
         timeZone,
-        minImpact,
         currencies
       });
 
-      title = `LỊCH TIN KINH TẾ HÔM NAY (${minImpact}+)`;
+      title = `LỊCH TIN ĐỎ 🔴 & NGHỈ LỄ ⚪ HÔM NAY`;
       note = `Tổng cộng có ${targetEvents.length} sự kiện chú ý trong ngày.`;
     } else {
       // Default: 'upcoming' - check events in the next X minutes
@@ -60,7 +58,6 @@ export default async function handler(req, res) {
         fromTime,
         toTime,
         timeZone,
-        minImpact,
         currencies
       });
 
@@ -73,7 +70,7 @@ export default async function handler(req, res) {
       return res.status(200).json({
         success: true,
         mode,
-        message: 'No events matched the criteria.',
+        message: 'No red or holiday events in window.',
         eventsCount: 0,
         timestamp: new Date().toISOString()
       });
