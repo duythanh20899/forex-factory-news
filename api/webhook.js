@@ -112,10 +112,10 @@ export default async function handler(req, res) {
           fromTime,
           toTime,
           timeZone,
-          allowedImpacts,
+          allowedImpacts: ['High'], // Sắp ra tin: chỉ báo tin ĐỎ, không báo ngày nghỉ
           currencies
         });
-        title = `TIN ĐỎ & NGHỈ LỄ TRONG 2 GIỜ TỚI`;
+        title = `TIN ĐỎ 🔴 TRONG 2 GIỜ TỚI`;
       } else {
         // Today
         const todayDateStr = getDateStringInTimezone(new Date(now), timeZone);

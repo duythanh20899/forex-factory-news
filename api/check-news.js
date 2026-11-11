@@ -50,18 +50,20 @@ export default async function handler(req, res) {
     let note = '';
 
     if (mode === 'today') {
+      // Đầu ngày báo cả Tin Đỏ (High) và Ngày nghỉ lễ ngân hàng (Holiday / Non-Economic)
       const todayDateStr = getDateStringInTimezone(new Date(now), timeZone);
 
       targetEvents = filterEvents(allEvents, {
         exactDay: todayDateStr,
         timeZone,
+        allowedImpacts: ['High', 'Holiday', 'Non-Economic'],
         currencies
       });
 
       title = `LỊCH TIN ĐỎ 🔴 & NGHỈ LỄ ⚪ HÔM NAY`;
       note = `Tổng cộng có ${targetEvents.length} sự kiện chú ý trong ngày.`;
     } else {
-      // Default: 'upcoming' - check events in the next X minutes
+      // Quét định kỳ trước giờ ra tin (upcoming): CHỈ BÁO TIN ĐỎ (High), BỎ QUA NGÀY NGHỈ
       const windowMinutes = parseInt(req.query.window || process.env.WINDOW_MINUTES || '30', 10);
       const fromTime = now;
       const toTime = now + windowMinutes * 60 * 1000;
@@ -70,10 +72,11 @@ export default async function handler(req, res) {
         fromTime,
         toTime,
         timeZone,
+        allowedImpacts: ['High'], // Chỉ lấy tin Đỏ, không lấy ngày nghỉ
         currencies
       });
 
-      title = `CẢNH BÁO: TIN KINH TẾ TRONG ${windowMinutes} PHÚT TỚI`;
+      title = `CẢNH BÁO: TIN ĐỎ 🔴 TRONG ${windowMinutes} PHÚT TỚI`;
       note = `Hãy chú ý quản lý vốn và rủi ro trước giờ ra tin!`;
     }
 
@@ -82,7 +85,9 @@ export default async function handler(req, res) {
       return res.status(200).json({
         success: true,
         mode,
-        message: 'No red or holiday events in window.',
+        message: mode === 'upcoming' 
+          ? 'No upcoming red news in window.' 
+          : 'No red or holiday events today.',
         eventsCount: 0,
         timestamp: new Date().toISOString()
       });
