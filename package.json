@@ -16,5 +16,8 @@
     "serverless"
   ],
   "author": "",
-  "license": "ISC"
+  "license": "ISC",
+  "dependencies": {
+    "@vercel/blob": "^2.9.0"
+  }
 }

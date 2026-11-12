@@ -99,8 +99,8 @@ export default async function handler(req, res) {
         });
 
         title = command === '/high' 
-          ? `LỊCH TIN ĐỎ HÔM NAY (🔴 High Impact)` 
-          : `LỊCH TIN ĐỎ 🔴 & NGHỈ LỄ ⚪ HÔM NAY`;
+          ? `LỊCH TIN ĐỎ HÔM NAY` 
+          : `LỊCH KINH TẾ HÔM NAY`;
       }
 
       if (targetEvents.length === 0) {
@@ -114,8 +114,7 @@ export default async function handler(req, res) {
       const msg = buildTelegramMessage({
         title,
         events: targetEvents,
-        timeZone,
-        note: `Tổng cộng: ${targetEvents.length} sự kiện.`
+        timeZone
       });
 
       await sendTelegramMessage(msg, { chatId, replyMarkup });

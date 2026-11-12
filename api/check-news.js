@@ -1,5 +1,6 @@
 import { fetchCalendar, filterEvents, buildTelegramMessage, getDateStringInTimezone } from '../lib/forexfactory.js';
 import { sendTelegramMessage } from '../lib/telegram.js';
+import { getSentEventIds, markEventsAsSent, getEventId } from '../lib/storage.js';
 
 export default async function handler(req, res) {
   // Allow GET and POST
@@ -29,17 +30,23 @@ export default async function handler(req, res) {
 
     const mode = (req.query.mode || 'upcoming').toLowerCase();
     const preview = req.query.preview === 'true'; // If true, return JSON without sending Telegram
+    const targetChatId = req.query.chatId || null; // Allow overriding chatId (e.g. for testing)
+    const force = req.query.force === 'true'; // Bypass deduplication if needed
 
     // 2. Fetch all events from ForexFactory
     const allEvents = await fetchCalendar();
 
     let targetEvents = [];
     let title = '';
-    let note = '';
 
     if (mode === 'today') {
       // Đầu ngày báo cả Tin Đỏ (High) và Ngày nghỉ lễ ngân hàng (Holiday / Non-Economic)
       const todayDateStr = getDateStringInTimezone(new Date(now), timeZone);
+      const dateDisplay = new Intl.DateTimeFormat('vi-VN', {
+        timeZone,
+        day: '2-digit',
+        month: '2-digit'
+      }).format(new Date(now));
 
       targetEvents = filterEvents(allEvents, {
         exactDay: todayDateStr,
@@ -48,24 +55,30 @@ export default async function handler(req, res) {
         currencies
       });
 
-      title = `LỊCH TIN ĐỎ 🔴 & NGHỈ LỄ ⚪ HÔM NAY`;
-      note = `Tổng cộng có ${targetEvents.length} sự kiện chú ý trong ngày.`;
+      title = `LỊCH KINH TẾ HÔM NAY (${dateDisplay})`;
     } else {
       // Quét định kỳ trước giờ ra tin (upcoming): CHỈ BÁO TIN ĐỎ (High), BỎ QUA NGÀY NGHỈ
       const windowMinutes = parseInt(req.query.window || process.env.WINDOW_MINUTES || '30', 10);
       const fromTime = now;
       const toTime = now + windowMinutes * 60 * 1000;
 
-      targetEvents = filterEvents(allEvents, {
+      const matchingEvents = filterEvents(allEvents, {
         fromTime,
         toTime,
         timeZone,
-        allowedImpacts: ['High'], // Chỉ lấy tin Đỏ, không lấy ngày nghỉ
+        allowedImpacts: ['High'],
         currencies
       });
 
-      title = `CẢNH BÁO: TIN ĐỎ 🔴 TRONG ${windowMinutes} PHÚT TỚI`;
-      note = `Hãy chú ý quản lý vốn và rủi ro trước giờ ra tin!`;
+      // Deduplication: Only send events that have not been sent yet
+      if (!force) {
+        const sentIds = await getSentEventIds();
+        targetEvents = matchingEvents.filter(ev => !sentIds.has(getEventId(ev)));
+      } else {
+        targetEvents = matchingEvents;
+      }
+
+      title = `CẢNH BÁO: TIN ĐỎ TRONG ${windowMinutes} PHÚT TỚI`;
     }
 
     // 3. If no matching events found
@@ -74,7 +87,7 @@ export default async function handler(req, res) {
         success: true,
         mode,
         message: mode === 'upcoming' 
-          ? 'No upcoming red news in window.' 
+          ? 'No upcoming unsent red news in window.' 
           : 'No red or holiday events today.',
         eventsCount: 0,
         timestamp: new Date().toISOString()
@@ -85,14 +98,20 @@ export default async function handler(req, res) {
     const message = buildTelegramMessage({
       title,
       events: targetEvents,
-      timeZone,
-      note
+      timeZone
     });
 
     // 5. Send to Telegram (unless preview=true)
     let telegramResult = null;
     if (!preview) {
-      telegramResult = await sendTelegramMessage(message);
+      telegramResult = await sendTelegramMessage(message, {
+        chatId: targetChatId
+      });
+
+      // Mark events as sent to prevent re-sending in upcoming sweeps
+      if (mode === 'upcoming') {
+        await markEventsAsSent(targetEvents);
+      }
     }
 
     return res.status(200).json({
